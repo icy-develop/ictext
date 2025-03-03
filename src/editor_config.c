@@ -3,6 +3,11 @@
 #include <sys/ioctl.h>
 
 #include "include/editor_config.h"
+
+#include <ctype.h>
+#include <stdio.h>
+
+#include "include/editor.h"
 #include "include/error_handling.h"
 
 
@@ -24,10 +29,27 @@ void enableRawMode() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) crash("tcsetattr");
 }
 
+int getCursorPosition(int* rows, int* cols) {
+    if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
+    char buf[32];
+    uint i;
+    for (i = 0; i < sizeof(buf) - 1; i++) {
+        if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
+        if (buf[i] == 'R') break;
+    }
+    buf[i] = '\0';
+
+    if (buf[0] != '\x1b' || buf[1] != '[') return -1;
+    if (sscanf(&buf[2], "%d;%d",rows, cols) != 2) return -1;
+
+    return 0;
+}
+
 int getWindowSize(int* rows, int* cols) {
     struct winsize ws;
-    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
-        return -1;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+        if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) return -1;
+        return getCursorPosition(rows, cols);
     }
     *rows = ws.ws_row;
     *cols = ws.ws_col;

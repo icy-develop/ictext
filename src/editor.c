@@ -36,7 +36,10 @@ void editorRefreshScreen() {
 
 void editorDrawRows() {
     for (int row = 0; row < editor.rows; row++) {
-        write(STDOUT_FILENO, "~\r\n", 3);
+        write(STDOUT_FILENO, "~", 1);
+        if (row < editor.rows - 1) {
+            write(STDOUT_FILENO, "\r\n", 2);
+        }
     }
 }
 
