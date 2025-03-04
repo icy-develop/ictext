@@ -10,4 +10,6 @@ add_executable(ictext src/main.c
         src/error_handling.c
         src/include/defines.h
         src/editor.c
-        src/include/editor.h)
+        src/include/editor.h
+        src/append_buffer.c
+        src/include/append_buffer.h)

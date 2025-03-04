@@ -2,6 +2,7 @@
 #define EDITOR_CONFIG_H
 #include <termios.h>
 struct editorConfig {
+    int cursorX, cursorY;
     int rows;
     int cols;
     struct termios original_mode;
