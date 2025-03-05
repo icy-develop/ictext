@@ -9,8 +9,8 @@
 
 #define ICTEXT_VERSION "0.1.0"
 
-char editorReadKey();
-void editorMoveCursor(char key);
+int editorReadKey();
+void editorMoveCursor(int key);
 void editorProcessKeypress();
 void editorRefreshScreen();
 void editorDrawRows(struct abuf *ab);

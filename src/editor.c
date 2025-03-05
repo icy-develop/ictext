@@ -10,27 +10,50 @@
 #include "include/editor_config.h"
 #include "include/error_handling.h"
 
-char editorReadKey() {
+enum editorKey {
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN
+};
+
+int editorReadKey() {
     ssize_t nread;
     char c = '\0';
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
         if (nread == -1 && errno == EAGAIN) crash("read");
     }
+    if (c == '\x1b') {
+        char seq[3];
+
+        if (read(STDIN_FILENO, &seq[0], 1) != 1 || read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
+
+        if (seq[0] == '[') {
+            switch (seq[1]) {
+                case 'A': return ARROW_UP;
+                case 'B': return ARROW_DOWN;
+                case 'C': return ARROW_RIGHT;
+                case 'D': return ARROW_LEFT;
+                default: break;
+            }
+        }
+        return '\x1b';
+    }
     return c;
 }
 
-void editorMoveCursor(const char key) {
+void editorMoveCursor(const int key) {
     switch (key) {
-        case 'a':
+        case ARROW_LEFT:
             editor.cursorX--;
             break;
-        case 'w':
+        case ARROW_UP:
             editor.cursorY--;
             break;
-        case 's':
+        case ARROW_DOWN:
             editor.cursorY++;
             break;
-        case 'd':
+        case ARROW_RIGHT:
             editor.cursorX++;
             break;
         default:
@@ -39,17 +62,19 @@ void editorMoveCursor(const char key) {
 }
 
 void editorProcessKeypress() {
-    const char c = editorReadKey();
+    const int c = editorReadKey();
     switch (c) {
         case CTRL('q'):
-            editorRefreshScreen();
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
-        case 'a':
-        case 'd':
-        case 's':
-        case 'w':
+        case ARROW_UP:
+        case ARROW_DOWN:
+        case ARROW_LEFT:
+        case ARROW_RIGHT:
             editorMoveCursor(c);
             break;
+        default: break;
     }
 }
 
@@ -99,8 +124,8 @@ void editorDrawRows(struct abuf *ab) {
 }
 
 void editorInit() {
-    editor.cursorX = 20;
-    editor.cursorY = 20;
+    editor.cursorX = 0;
+    editor.cursorY = 0;
 
     if (getWindowSize(&editor.rows, &editor.cols) == -1) crash("getWindowSize");
 }
