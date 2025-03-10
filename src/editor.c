@@ -77,25 +77,41 @@ int editorReadKey() {
 }
 
 void editorMoveCursor(const int key) {
+    erow* row = (editor.cursorY >= editor.numRows ? nullptr : &editor.row[editor.cursorY]);
+
     switch (key) {
         case ARROW_LEFT:
             if (editor.cursorX != 0)
                 editor.cursorX--;
+            else if (editor.cursorY > 0) {
+                editor.cursorY--;
+                editor.cursorX = editor.row[editor.cursorY].size;
+            }
             break;
         case ARROW_UP:
             if (editor.cursorY != 0)
                 editor.cursorY--;
             break;
         case ARROW_DOWN:
-            if (editor.cursorY != editor.screenRows - 1)
+            if (editor.cursorY < editor.numRows)
                 editor.cursorY++;
             break;
         case ARROW_RIGHT:
-            if (editor.cursorX != editor.screenCols - 1)
+            if (row && editor.cursorX < row->size)
                 editor.cursorX++;
+            else if (row && editor.cursorX >= row->size) {
+                editor.cursorY++;
+                editor.cursorX = 0;
+            }
             break;
         default:
             break;
+    }
+
+    row = editor.cursorY >= editor.numRows ? nullptr : &editor.row[editor.cursorY];
+    int rowLength = row ? row->size : 0;
+    if (editor.cursorX > rowLength) {
+        editor.cursorX = rowLength;
     }
 }
 
@@ -157,6 +173,7 @@ void editorProcessKeypress() {
 }
 
 void editorRefreshScreen() {
+    editorScroll();
     struct abuf ab = ABUF_INIT;
 
     abAppend(&ab, "\x1b[?25l", 6);
@@ -165,7 +182,7 @@ void editorRefreshScreen() {
     editorDrawRows(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", editor.cursorY + 1, editor.cursorX + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (editor.cursorY - editor.rowOffset) + 1, (editor.cursorX - editor.colOffset) + 1);
     abAppend(&ab, buf, strlen(buf));
 
     abAppend(&ab, "\x1b[?25h", 6);
@@ -176,7 +193,8 @@ void editorRefreshScreen() {
 
 void editorDrawRows(struct abuf *ab) {
     for (int row = 0; row < editor.screenRows; row++) {
-        if (row >= editor.numRows) {
+        int fileRow = row + editor.rowOffset;
+        if (fileRow >= editor.numRows) {
             if (editor.numRows == 0 && row == editor.screenRows / 4) {
                 char welcome[80];
                 int welcomelen = snprintf(welcome, sizeof(welcome), "ICtext editor - version %s", ICTEXT_VERSION);
@@ -197,9 +215,10 @@ void editorDrawRows(struct abuf *ab) {
                 abAppend(ab, "~", 1);
         }
         else {
-            int len = editor.row[row].size;
+            int len = editor.row[fileRow].size - editor.colOffset;
+            if (len < 0) len = 0;
             if (len > editor.screenCols) { len = editor.screenCols; }
-            abAppend(ab, editor.row[row].data, len);
+            abAppend(ab, &editor.row[fileRow].data[editor.colOffset], len);
         }
         abAppend(ab, "\x1b[K", 3);
         if (row < editor.screenRows - 1) {
@@ -208,10 +227,27 @@ void editorDrawRows(struct abuf *ab) {
     }
 }
 
+void editorScroll() {
+    if (editor.cursorY < editor.rowOffset) {
+        editor.rowOffset = editor.cursorY;
+    }
+    if (editor.cursorY >= editor.rowOffset + editor.screenRows) {
+        editor.rowOffset = editor.cursorY - editor.screenRows + 1;
+    }
+    if (editor.cursorX < editor.colOffset) {
+        editor.colOffset = editor.cursorX;
+    }
+    if (editor.cursorX >= editor.colOffset + editor.screenCols) {
+        editor.colOffset = editor.cursorX - editor.screenCols + 1;
+    }
+}
+
 void editorInit() {
     editor.cursorX = 0;
     editor.cursorY = 0;
     editor.numRows = 0;
+    editor.rowOffset = 0;
+    editor.colOffset = 0;
     editor.row = nullptr;
 
     if (getWindowSize(&editor.screenRows, &editor.screenCols) == -1) crash("getWindowSize");

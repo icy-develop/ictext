@@ -16,6 +16,7 @@ void editorProcessKeypress();
 void editorRefreshScreen();
 void editorAppendRow(const char* s, int len);
 void editorDrawRows(struct abuf *ab);
+void editorScroll();
 void editorInit();
 
 #endif //EDITOR_H

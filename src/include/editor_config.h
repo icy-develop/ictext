@@ -11,7 +11,8 @@ struct editorConfig {
     int cursorX, cursorY;
     int screenRows, screenCols;
     int numRows;
-    erow* row;
+    int rowOffset, colOffset;
+    erow *row;
     struct termios original_mode;
 };
 
