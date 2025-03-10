@@ -1,3 +1,7 @@
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -83,16 +87,42 @@ void editorMoveCursor(const int key) {
                 editor.cursorY--;
             break;
         case ARROW_DOWN:
-            if (editor.cursorY != editor.rows - 1)
+            if (editor.cursorY != editor.screenRows - 1)
                 editor.cursorY++;
             break;
         case ARROW_RIGHT:
-            if (editor.cursorX != editor.cols - 1)
+            if (editor.cursorX != editor.screenCols - 1)
                 editor.cursorX++;
             break;
         default:
             break;
     }
+}
+
+void editorAppendRow(const char* s, const int len) {
+    editor.row = realloc(editor.row, sizeof(erow) * (editor.numRows + 1));
+    const int at = editor.numRows;
+    editor.row[at].size = len;
+    editor.row[at].data = malloc(len+1);
+    memcpy(editor.row[at].data, s, len);
+    editor.row[at].data[len] = '\0';
+    editor.numRows++;
+}
+
+void editorOpen(char *filename) {
+    FILE* file = fopen(filename, "r");
+    if (!file) crash("fopen failed");
+    char* line = nullptr;
+    size_t lineCap = 0;
+    ssize_t lineLen;
+    while ((lineLen = getline(&line, &lineCap, file)) != -1) {
+        while (lineLen > 0 && (line[lineLen - 1] == '\n' || line[lineLen - 1] == '\r')) {
+            lineLen--;
+        }
+        editorAppendRow(line, lineLen);
+    }
+    free(line);
+    fclose(file);
 }
 
 void editorProcessKeypress() {
@@ -106,11 +136,11 @@ void editorProcessKeypress() {
             editor.cursorX = 0;
             break;
         case END:
-            editor.cursorX = editor.cols - 1;
+            editor.cursorX = editor.screenCols - 1;
             break;
         case PAGE_UP:
         case PAGE_DOWN: {
-            int times = editor.rows;
+            int times = editor.screenRows;
             while (times--) {
                 editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
             }
@@ -145,27 +175,34 @@ void editorRefreshScreen() {
 }
 
 void editorDrawRows(struct abuf *ab) {
-    for (int row = 0; row < editor.rows; row++) {
-        if (row == editor.rows / 4) {
-            char welcome[80];
-            int welcomelen = snprintf(welcome, sizeof(welcome), "ICtext editor - version %s", ICTEXT_VERSION);
-            if (welcomelen >= editor.cols) {
-                welcomelen = editor.cols;
+    for (int row = 0; row < editor.screenRows; row++) {
+        if (row >= editor.numRows) {
+            if (editor.numRows == 0 && row == editor.screenRows / 4) {
+                char welcome[80];
+                int welcomelen = snprintf(welcome, sizeof(welcome), "ICtext editor - version %s", ICTEXT_VERSION);
+                if (welcomelen >= editor.screenCols) {
+                    welcomelen = editor.screenCols;
+                }
+                int padding = (editor.screenCols - welcomelen) / 2;
+                if (padding) {
+                    abAppend(ab, "~", 1);
+                    padding--;
+                }
+                while (padding--) {
+                    abAppend(ab, " ", 1);
+                }
+                abAppend(ab, welcome, welcomelen);
             }
-            int padding = (editor.cols - welcomelen) / 2;
-            if (padding) {
+            else
                 abAppend(ab, "~", 1);
-                padding--;
-            }
-            while (padding--) {
-                abAppend(ab, " ", 1);
-            }
-            abAppend(ab, welcome, welcomelen);
         }
-        else
-            abAppend(ab, "~", 1);
+        else {
+            int len = editor.row[row].size;
+            if (len > editor.screenCols) { len = editor.screenCols; }
+            abAppend(ab, editor.row[row].data, len);
+        }
         abAppend(ab, "\x1b[K", 3);
-        if (row < editor.rows - 1) {
+        if (row < editor.screenRows - 1) {
             abAppend(ab, "\r\n", 2);
         }
     }
@@ -174,6 +211,8 @@ void editorDrawRows(struct abuf *ab) {
 void editorInit() {
     editor.cursorX = 0;
     editor.cursorY = 0;
+    editor.numRows = 0;
+    editor.row = nullptr;
 
-    if (getWindowSize(&editor.rows, &editor.cols) == -1) crash("getWindowSize");
+    if (getWindowSize(&editor.screenRows, &editor.screenCols) == -1) crash("getWindowSize");
 }

@@ -1,10 +1,17 @@
 #ifndef EDITOR_CONFIG_H
 #define EDITOR_CONFIG_H
 #include <termios.h>
+
+typedef struct erow {
+    int size;
+    char* data;
+} erow;
+
 struct editorConfig {
     int cursorX, cursorY;
-    int rows;
-    int cols;
+    int screenRows, screenCols;
+    int numRows;
+    erow* row;
     struct termios original_mode;
 };
 

@@ -11,8 +11,10 @@
 
 int editorReadKey();
 void editorMoveCursor(int key);
+void editorOpen(char *filename);
 void editorProcessKeypress();
 void editorRefreshScreen();
+void editorAppendRow(const char* s, int len);
 void editorDrawRows(struct abuf *ab);
 void editorInit();
 
