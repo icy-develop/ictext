@@ -179,10 +179,18 @@ void editorProcessKeypress() {
             editor.cursorX = 0;
             break;
         case END:
-            editor.cursorX = editor.screenCols - 1;
+            if (editor.cursorY < editor.numRows)
+                editor.cursorX = editor.row[editor.cursorY].size;
             break;
         case PAGE_UP:
         case PAGE_DOWN: {
+            if (c == PAGE_UP) {
+                editor.cursorY = editor.rowOffset;
+            }
+            else {
+                editor.cursorY = editor.rowOffset + editor.screenRows - 1;
+                if (editor.cursorY > editor.numRows) editor.cursorY = editor.numRows;
+            }
             int times = editor.screenRows;
             while (times--) {
                 editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
