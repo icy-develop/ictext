@@ -17,6 +17,7 @@ struct editorConfig {
     int numRows;
     int rowOffset, colOffset;
     erow *row;
+    int dirty;
     char* filename;
     char statusmsg[80];
     time_t statusmsgTime;

@@ -11,12 +11,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <fcntl.h>
 
 #include "include/append_buffer.h"
 #include "include/editor_config.h"
 #include "include/error_handling.h"
 
 enum editorKey {
+    BACKSPACE = 127,
     ARROW_LEFT = 1000,
     ARROW_RIGHT,
     ARROW_UP,
@@ -128,6 +130,7 @@ void editorAppendRow(const char *s, const int len) {
     editorUpdateRow(&editor.row[at]);
 
     editor.numRows++;
+    editor.dirty++;
 }
 
 void editorUpdateRow(erow *row) {
@@ -167,15 +170,35 @@ void editorOpen(char *filename) {
     }
     free(line);
     fclose(file);
+    editor.dirty = 0;
 }
 
 void editorProcessKeypress() {
+    static int quit_times = QUIT_MSG_RETRY;
+
     const int c = editorReadKey();
     switch (c) {
         case CTRL('q'):
+            if (editor.dirty && quit_times > 0) {
+                editorSetStatusMessage("File has unsaved changes. Press Ctrl-Q %d more times to exit", quit_times);
+                quit_times--;
+                return;
+            }
             write(STDOUT_FILENO, "\x1b[2J", 4);
             write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
+        case CTRL('s'):
+            editorSave();
+            break;
+        case BACKSPACE:
+        case CTRL('h'):
+        case DELETE:
+            break;
+        case CTRL('l'):
+        case '\x1b':
+            break;
+        case '\r':
+            break;
         case HOME:
             editor.cursorX = 0;
             break;
@@ -203,8 +226,11 @@ void editorProcessKeypress() {
         case ARROW_RIGHT:
             editorMoveCursor(c);
             break;
-        default: break;
+        default:
+            editorInsertChar(c);
+            break;
     }
+    quit_times = QUIT_MSG_RETRY;
 }
 
 void editorRefreshScreen() {
@@ -248,6 +274,42 @@ int editorRowCursorXToRenderX(const erow *row, const int cursorX) {
     return renderX;
 }
 
+char * editorRowsToString(int *bufferLength) {
+    int totalLength = 0;
+    for (int i = 0; i < editor.numRows; i++) {
+        totalLength += editor.row[i].size + 1;
+    }
+    *bufferLength = totalLength;
+
+    char* buf = malloc(totalLength);
+    char *it = buf;
+    for (int i = 0; i < editor.numRows; i++) {
+        memcpy(it, editor.row[i].data, editor.row[i].size);
+        it += editor.row[i].size;
+        *it = '\n';
+        it++;
+    }
+    return buf;
+}
+
+void editorRowInsertChar(erow *row, int at, const int c) {
+    if (at < 0 || at >= row->size) at = row->size;
+    row->data = realloc(row->data, row->size + row->size + 2);
+    memmove(&row->data[at + 1], &row->data[at], row->size - at + 1);
+    row->size++;
+    row->data[at] = c;
+    editorUpdateRow(row);
+    editor.dirty++;
+}
+
+void editorInsertChar(int c) {
+    if (editor.cursorY == editor.numRows) {
+        editorAppendRow("", 0);
+    }
+    editorRowInsertChar(&editor.row[editor.cursorY], editor.cursorX, c);
+    editor.cursorX++;
+}
+
 void editorDrawRows(struct abuf *ab) {
     for (int row = 0; row < editor.screenRows; row++) {
         int fileRow = row + editor.rowOffset;
@@ -283,8 +345,8 @@ void editorDrawRows(struct abuf *ab) {
 void editorDrawStatusBar(struct abuf *ab) {
     abAppend(ab, "\x1b[7m", 4);
     char status[80], rstatus[80];
-    int length = snprintf(status, sizeof(status), "%.20s - %d lines", editor.filename ? editor.filename : "",
-                          editor.numRows);
+    int length = snprintf(status, sizeof(status), "%.20s - %d lines %s", editor.filename ? editor.filename : "[Blank]",
+                          editor.numRows, editor.dirty ? "(modified)" : "");
     int rLength = snprintf(rstatus, sizeof(rstatus), "%d/%d", editor.cursorY + 1, editor.numRows);
     if (length > editor.screenCols) length = editor.screenCols;
     abAppend(ab, status, length);
@@ -328,6 +390,29 @@ void editorScroll() {
     }
 }
 
+void editorSave() {
+    if (editor.filename == nullptr) return;
+
+    int length;
+    char* buffer = editorRowsToString(&length);
+
+    const int fd = open(editor.filename, O_RDWR | O_CREAT, 0644);
+    if (fd != -1) {
+        if (ftruncate(fd, length) != -1) {
+            if (write(fd, buffer, length) == length) {
+                close(fd);
+                free(buffer);
+                editor.dirty = 0;
+                editorSetStatusMessage("%d bytes saved on disk", length);
+                return;
+            }
+        }
+        close(fd);
+    }
+    free(buffer);
+    editorSetStatusMessage("Can't save! I/O Error: %s", strerror(errno));
+}
+
 void editorInit() {
     editor.cursorX = 0;
     editor.cursorY = 0;
@@ -336,6 +421,7 @@ void editorInit() {
     editor.rowOffset = 0;
     editor.colOffset = 0;
     editor.row = nullptr;
+    editor.dirty = 0;
     editor.filename = nullptr;
     editor.statusmsg[0] = '\0';
     editor.statusmsgTime = 0;
