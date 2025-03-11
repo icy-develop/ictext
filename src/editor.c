@@ -336,9 +336,9 @@ void editorInit() {
     editor.rowOffset = 0;
     editor.colOffset = 0;
     editor.row = nullptr;
-    editor.screenRows -= 2;
     editor.filename = nullptr;
     editor.statusmsg[0] = '\0';
     editor.statusmsgTime = 0;
     if (getWindowSize(&editor.screenRows, &editor.screenCols) == -1) crash("getWindowSize");
+    editor.screenRows -= 2;
 }
