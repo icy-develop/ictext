@@ -7,8 +7,10 @@
 #include <stdlib.h>
 #include "include/editor.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "include/append_buffer.h"
 #include "include/editor_config.h"
@@ -51,8 +53,7 @@ int editorReadKey() {
                         default: break;
                     }
                 }
-            }
-            else {
+            } else {
                 switch (seq[1]) {
                     case 'A': return ARROW_UP;
                     case 'B': return ARROW_DOWN;
@@ -63,8 +64,7 @@ int editorReadKey() {
                     default: break;
                 }
             }
-        }
-        else if (seq[0] == 'O') {
+        } else if (seq[0] == 'O') {
             switch (seq[1]) {
                 case 'H': return HOME;
                 case 'F': return END;
@@ -77,7 +77,7 @@ int editorReadKey() {
 }
 
 void editorMoveCursor(const int key) {
-    erow* row = (editor.cursorY >= editor.numRows ? nullptr : &editor.row[editor.cursorY]);
+    erow *row = (editor.cursorY >= editor.numRows ? nullptr : &editor.row[editor.cursorY]);
 
     switch (key) {
         case ARROW_LEFT:
@@ -115,11 +115,11 @@ void editorMoveCursor(const int key) {
     }
 }
 
-void editorAppendRow(const char* s, const int len) {
+void editorAppendRow(const char *s, const int len) {
     editor.row = realloc(editor.row, sizeof(erow) * (editor.numRows + 1));
     const int at = editor.numRows;
     editor.row[at].size = len;
-    editor.row[at].data = malloc(len+1);
+    editor.row[at].data = malloc(len + 1);
     memcpy(editor.row[at].data, s, len);
     editor.row[at].data[len] = '\0';
 
@@ -136,15 +136,14 @@ void editorUpdateRow(erow *row) {
         if (row->data[i] == '\t') tabs++;
     }
     free(row->render);
-    row->render = malloc(row->size + tabs*(TAB_STOP - 1) + 1);
+    row->render = malloc(row->size + tabs * (TAB_STOP - 1) + 1);
 
     int idx = 0;
     for (int j = 0; j < row->size; j++) {
         if (row->data[j] == '\t') {
             row->render[idx++] = ' ';
             while (idx % TAB_STOP != 0) row->render[idx++] = ' ';
-        }
-        else {
+        } else {
             row->render[idx++] = row->data[j];
         }
     }
@@ -153,9 +152,11 @@ void editorUpdateRow(erow *row) {
 }
 
 void editorOpen(char *filename) {
-    FILE* file = fopen(filename, "r");
+    free(editor.filename);
+    editor.filename = strdup(filename);
+    FILE *file = fopen(filename, "r");
     if (!file) crash("fopen failed");
-    char* line = nullptr;
+    char *line = nullptr;
     size_t lineCap = 0;
     ssize_t lineLen;
     while ((lineLen = getline(&line, &lineCap, file)) != -1) {
@@ -186,8 +187,7 @@ void editorProcessKeypress() {
         case PAGE_DOWN: {
             if (c == PAGE_UP) {
                 editor.cursorY = editor.rowOffset;
-            }
-            else {
+            } else {
                 editor.cursorY = editor.rowOffset + editor.screenRows - 1;
                 if (editor.cursorY > editor.numRows) editor.cursorY = editor.numRows;
             }
@@ -212,18 +212,29 @@ void editorRefreshScreen() {
     struct abuf ab = ABUF_INIT;
 
     abAppend(&ab, "\x1b[?25l", 6);
-    abAppend(&ab, "\x1b[H",3);
+    abAppend(&ab, "\x1b[H", 3);
 
     editorDrawRows(&ab);
+    editorDrawStatusBar(&ab);
+    editorDrawStatusMessage(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (editor.cursorY - editor.rowOffset) + 1, (editor.renderX - editor.colOffset) + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (editor.cursorY - editor.rowOffset) + 1,
+             (editor.renderX - editor.colOffset) + 1);
     abAppend(&ab, buf, strlen(buf));
 
     abAppend(&ab, "\x1b[?25h", 6);
 
     write(STDOUT_FILENO, ab.buffer, ab.length);
     abFree(&ab);
+}
+
+void editorSetStatusMessage(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    vsnprintf(editor.statusmsg, sizeof(editor.statusmsg), format, args);
+    va_end(args);
+    editor.statusmsgTime = time(nullptr);
 }
 
 int editorRowCursorXToRenderX(const erow *row, const int cursorX) {
@@ -256,21 +267,46 @@ void editorDrawRows(struct abuf *ab) {
                     abAppend(ab, " ", 1);
                 }
                 abAppend(ab, welcome, welcomelen);
-            }
-            else
+            } else
                 abAppend(ab, "~", 1);
-        }
-        else {
+        } else {
             int len = editor.row[fileRow].rsize - editor.colOffset;
             if (len < 0) len = 0;
             if (len > editor.screenCols) { len = editor.screenCols; }
             abAppend(ab, &editor.row[fileRow].render[editor.colOffset], len);
         }
         abAppend(ab, "\x1b[K", 3);
-        if (row < editor.screenRows - 1) {
-            abAppend(ab, "\r\n", 2);
-        }
+        abAppend(ab, "\r\n", 2);
     }
+}
+
+void editorDrawStatusBar(struct abuf *ab) {
+    abAppend(ab, "\x1b[7m", 4);
+    char status[80], rstatus[80];
+    int length = snprintf(status, sizeof(status), "%.20s - %d lines", editor.filename ? editor.filename : "",
+                          editor.numRows);
+    int rLength = snprintf(rstatus, sizeof(rstatus), "%d/%d", editor.cursorY + 1, editor.numRows);
+    if (length > editor.screenCols) length = editor.screenCols;
+    abAppend(ab, status, length);
+    while (length < editor.screenCols) {
+        if (editor.screenCols - length == rLength) {
+            abAppend(ab, rstatus, rLength);
+            break;
+        }
+
+        abAppend(ab, " ", 1);
+        length++;
+    }
+    abAppend(ab, "\x1b[m", 3);
+    abAppend(ab, "\r\n", 2);
+}
+
+void editorDrawStatusMessage(struct abuf *ab) {
+    abAppend(ab, "\x1b[K", 3);
+    u_long msgLength = strlen(editor.statusmsg);
+    if (msgLength > editor.screenCols) msgLength = editor.screenCols;
+    if (msgLength && time(nullptr) - editor.statusmsgTime < STATUS_MSG_TIMEOUT)
+        abAppend(ab, editor.statusmsg, msgLength);
 }
 
 void editorScroll() {
@@ -300,6 +336,9 @@ void editorInit() {
     editor.rowOffset = 0;
     editor.colOffset = 0;
     editor.row = nullptr;
-
+    editor.screenRows -= 2;
+    editor.filename = nullptr;
+    editor.statusmsg[0] = '\0';
+    editor.statusmsgTime = 0;
     if (getWindowSize(&editor.screenRows, &editor.screenCols) == -1) crash("getWindowSize");
 }

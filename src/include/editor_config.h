@@ -1,6 +1,7 @@
 #ifndef EDITOR_CONFIG_H
 #define EDITOR_CONFIG_H
 #include <termios.h>
+#include <time.h>
 
 typedef struct erow {
     int size;
@@ -16,6 +17,9 @@ struct editorConfig {
     int numRows;
     int rowOffset, colOffset;
     erow *row;
+    char* filename;
+    char statusmsg[80];
+    time_t statusmsgTime;
     struct termios original_mode;
 };
 
