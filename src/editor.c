@@ -122,7 +122,34 @@ void editorAppendRow(const char* s, const int len) {
     editor.row[at].data = malloc(len+1);
     memcpy(editor.row[at].data, s, len);
     editor.row[at].data[len] = '\0';
+
+    editor.row[at].rsize = 0;
+    editor.row[at].render = nullptr;
+    editorUpdateRow(&editor.row[at]);
+
     editor.numRows++;
+}
+
+void editorUpdateRow(erow *row) {
+    int tabs = 0;
+    for (int i = 0; i < row->size; i++) {
+        if (row->data[i] == '\t') tabs++;
+    }
+    free(row->render);
+    row->render = malloc(row->size + tabs*(TAB_STOP - 1) + 1);
+
+    int idx = 0;
+    for (int j = 0; j < row->size; j++) {
+        if (row->data[j] == '\t') {
+            row->render[idx++] = ' ';
+            while (idx % TAB_STOP != 0) row->render[idx++] = ' ';
+        }
+        else {
+            row->render[idx++] = row->data[j];
+        }
+    }
+    row->render[idx] = '\0';
+    row->rsize = idx;
 }
 
 void editorOpen(char *filename) {
@@ -182,13 +209,24 @@ void editorRefreshScreen() {
     editorDrawRows(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (editor.cursorY - editor.rowOffset) + 1, (editor.cursorX - editor.colOffset) + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (editor.cursorY - editor.rowOffset) + 1, (editor.renderX - editor.colOffset) + 1);
     abAppend(&ab, buf, strlen(buf));
 
     abAppend(&ab, "\x1b[?25h", 6);
 
     write(STDOUT_FILENO, ab.buffer, ab.length);
     abFree(&ab);
+}
+
+int editorRowCursorXToRenderX(const erow *row, const int cursorX) {
+    int renderX = 0;
+    for (int i = 0; i < cursorX; i++) {
+        if (row->data[i] == '\t') {
+            renderX += (TAB_STOP - 1) - (renderX % TAB_STOP);
+        }
+        renderX++;
+    }
+    return renderX;
 }
 
 void editorDrawRows(struct abuf *ab) {
@@ -215,10 +253,10 @@ void editorDrawRows(struct abuf *ab) {
                 abAppend(ab, "~", 1);
         }
         else {
-            int len = editor.row[fileRow].size - editor.colOffset;
+            int len = editor.row[fileRow].rsize - editor.colOffset;
             if (len < 0) len = 0;
             if (len > editor.screenCols) { len = editor.screenCols; }
-            abAppend(ab, &editor.row[fileRow].data[editor.colOffset], len);
+            abAppend(ab, &editor.row[fileRow].render[editor.colOffset], len);
         }
         abAppend(ab, "\x1b[K", 3);
         if (row < editor.screenRows - 1) {
@@ -228,23 +266,28 @@ void editorDrawRows(struct abuf *ab) {
 }
 
 void editorScroll() {
+    editor.renderX = 0;
+    if (editor.cursorY < editor.numRows) {
+        editor.renderX = editorRowCursorXToRenderX(&editor.row[editor.cursorY], editor.cursorX);
+    }
     if (editor.cursorY < editor.rowOffset) {
         editor.rowOffset = editor.cursorY;
     }
     if (editor.cursorY >= editor.rowOffset + editor.screenRows) {
         editor.rowOffset = editor.cursorY - editor.screenRows + 1;
     }
-    if (editor.cursorX < editor.colOffset) {
-        editor.colOffset = editor.cursorX;
+    if (editor.renderX < editor.colOffset) {
+        editor.colOffset = editor.renderX;
     }
-    if (editor.cursorX >= editor.colOffset + editor.screenCols) {
-        editor.colOffset = editor.cursorX - editor.screenCols + 1;
+    if (editor.renderX >= editor.colOffset + editor.screenCols) {
+        editor.colOffset = editor.renderX - editor.screenCols + 1;
     }
 }
 
 void editorInit() {
     editor.cursorX = 0;
     editor.cursorY = 0;
+    editor.renderX = 0;
     editor.numRows = 0;
     editor.rowOffset = 0;
     editor.colOffset = 0;

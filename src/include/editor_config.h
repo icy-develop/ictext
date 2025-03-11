@@ -4,11 +4,14 @@
 
 typedef struct erow {
     int size;
+    int rsize;
     char* data;
+    char* render;
 } erow;
 
 struct editorConfig {
     int cursorX, cursorY;
+    int renderX;
     int screenRows, screenCols;
     int numRows;
     int rowOffset, colOffset;
