@@ -154,6 +154,19 @@ void editorUpdateRow(erow *row) {
     row->rsize = idx;
 }
 
+void editorDeleteRow(int at) {
+    if (at < 0 || at >= editor.numRows) return;
+    editorFreeRow(&editor.row[at]);
+    memmove(&editor.row[at], &editor.row[at + 1], (editor.numRows - at - 1) * sizeof(erow));
+    editor.numRows--;
+    editor.dirty++;
+}
+
+void editorFreeRow(erow *row) {
+    free(row->render);
+    free(row->data);
+}
+
 void editorOpen(char *filename) {
     free(editor.filename);
     editor.filename = strdup(filename);
@@ -193,6 +206,8 @@ void editorProcessKeypress() {
         case BACKSPACE:
         case CTRL('h'):
         case DELETE:
+            if (c == DELETE) editorMoveCursor(ARROW_RIGHT);
+            editorDeleteChar();
             break;
         case CTRL('l'):
         case '\x1b':
@@ -302,12 +317,47 @@ void editorRowInsertChar(erow *row, int at, const int c) {
     editor.dirty++;
 }
 
+void editorRowDeleteChar(erow *row, int at) {
+    if (at < 0 || at >= row->size) return;
+    memmove(&row->data[at], &row->data[at + 1], row->size - at);
+    row->size--;
+    editorUpdateRow(row);
+    editor.dirty++;
+}
+
+void editorRowAppendString(erow *row, char *str, size_t length) {
+    row->data = realloc(row->data, row->size + length + 1);
+    memcpy(&row->data[row->size], str, length);
+    row->size += length;
+    row->data[row->size] = '\0';
+    editorUpdateRow(row);
+    editor.dirty++;
+}
+
 void editorInsertChar(int c) {
     if (editor.cursorY == editor.numRows) {
         editorAppendRow("", 0);
     }
     editorRowInsertChar(&editor.row[editor.cursorY], editor.cursorX, c);
     editor.cursorX++;
+}
+
+
+void editorDeleteChar() {
+    if (editor.cursorY == editor.numRows) return;
+    if (editor.cursorX == 0 && editor.cursorY == 0) return;
+
+    erow* row = &editor.row[editor.cursorY];
+    if (editor.cursorX > 0) {
+        editorRowDeleteChar(row, editor.cursorX - 1);
+        editor.cursorX--;
+    }
+    else {
+        editor.cursorX = editor.row[editor.cursorY - 1].size;
+        editorRowAppendString(&editor.row[editor.cursorY - 1], row->data, row->size);
+        editorDeleteRow(editor.cursorY);
+        editor.cursorY--;
+    }
 }
 
 void editorDrawRows(struct abuf *ab) {
