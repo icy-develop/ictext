@@ -219,6 +219,9 @@ void editorProcessKeypress() {
         case '\r':
             editorInsertNewLine();
             break;
+        case CTRL('f'):
+            editorFind();
+            break;
         case HOME:
             editor.cursorX = 0;
             break;
@@ -275,7 +278,7 @@ void editorRefreshScreen() {
     abFree(&ab);
 }
 
-char* editorPrompt(const char *prompt) {
+char* editorPrompt(const char *prompt, void(*callback)(const char*, int)) {
     size_t bufsize = 128;
     char *buf = malloc(bufsize);
 
@@ -292,12 +295,14 @@ char* editorPrompt(const char *prompt) {
         }
         if (c == '\x1b') {
             editorSetStatusMessage("");
+            callback(buf, c);
             free(buf);
             return nullptr;
         }
         if (c == '\r') {
             if (buflen != 0) {
                 editorSetStatusMessage("");
+                callback(buf, c);
                 return buf;
             }
         }
@@ -308,6 +313,63 @@ char* editorPrompt(const char *prompt) {
             }
             buf[buflen++] = c;
             buf[buflen] = '\0';
+        }
+        callback(buf, c);
+    }
+}
+
+void editorFind() {
+    const int savedCx = editor.cursorX;
+    const int savedCy = editor.cursorY;
+    const int savedRowOffset = editor.rowOffset;
+    const int savedColOffset = editor.colOffset;
+    char* query = editorPrompt("Search: %s (ESC or Enter to cancel, Arrows to move)", editorFindCallback);
+    if (query) free(query);
+    else {
+        editor.cursorX = savedCx;
+        editor.cursorY = savedCy;
+        editor.rowOffset = savedRowOffset;
+        editor.colOffset = savedColOffset;
+    }
+}
+
+void editorFindCallback(const char *query, const int key) {
+
+    static int lastMatch = -1;
+    static int direction = 1;
+
+    if (key == '\r' || key == '\x1b') {
+        lastMatch = -1;
+        direction = 1;
+        return;
+    }
+    if (key == ARROW_RIGHT || key == ARROW_DOWN) {
+        direction = 1;
+    }
+    else if (key == ARROW_LEFT || key == ARROW_UP) {
+        direction = -1;
+    }
+    else {
+        lastMatch = -1;
+        direction = 1;
+    }
+
+    if (lastMatch == -1) direction = 1;
+    int current = lastMatch;
+
+    for (int i = 0; i < editor.numRows; i++) {
+        current += direction;
+        if (current == -1) current = editor.numRows - 1;
+        else if (current == editor.numRows) current = 0;
+
+        const erow* row = &editor.row[current];
+        const char* match = strstr(row->render, query);
+        if (match) {
+            lastMatch = current;
+            editor.cursorY = current;
+            editor.cursorX = editorRowCursorXToRenderX(row, match - row->render);
+            editor.rowOffset = editor.numRows;
+            break;
         }
     }
 }
@@ -329,6 +391,20 @@ int editorRowCursorXToRenderX(const erow *row, const int cursorX) {
         renderX++;
     }
     return renderX;
+}
+
+int editorRenderXToCursorX(const erow *row, int renderX) {
+    int cur_rx = 0;
+    int cx;
+    for (cx = 0; cx < row->size; cx++) {
+        if (row->data[cx] == '\t') {
+            cur_rx += (TAB_STOP - 1) - (cur_rx % TAB_STOP);
+        }
+        cur_rx++;
+
+        if (cur_rx > renderX) return cx;
+    }
+    return cx;
 }
 
 char * editorRowsToString(int *bufferLength) {
@@ -500,7 +576,7 @@ void editorScroll() {
 
 void editorSave() {
     if (editor.filename == nullptr) {
-        editor.filename = editorPrompt("Save as: %s, press ESC to cancel");
+        editor.filename = editorPrompt("Save as: %s, press ESC to cancel", nullptr);
         if (editor.filename == nullptr) {
             editorSetStatusMessage("Save cancelled");
             return;
