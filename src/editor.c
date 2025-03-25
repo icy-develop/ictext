@@ -117,9 +117,12 @@ void editorMoveCursor(const int key) {
     }
 }
 
-void editorAppendRow(const char *s, const int len) {
+void editorInsertRow(int at, const char *s, const int len) {
+    if (at < 0 || at > editor.numRows) return;
+
     editor.row = realloc(editor.row, sizeof(erow) * (editor.numRows + 1));
-    const int at = editor.numRows;
+    memmove(&editor.row[at+1], &editor.row[at], (editor.numRows - at) * sizeof(erow));
+
     editor.row[at].size = len;
     editor.row[at].data = malloc(len + 1);
     memcpy(editor.row[at].data, s, len);
@@ -179,7 +182,7 @@ void editorOpen(char *filename) {
         while (lineLen > 0 && (line[lineLen - 1] == '\n' || line[lineLen - 1] == '\r')) {
             lineLen--;
         }
-        editorAppendRow(line, lineLen);
+        editorInsertRow(editor.numRows, line, lineLen);
     }
     free(line);
     fclose(file);
@@ -213,6 +216,7 @@ void editorProcessKeypress() {
         case '\x1b':
             break;
         case '\r':
+            editorInsertNewLine();
             break;
         case HOME:
             editor.cursorX = 0;
@@ -336,7 +340,7 @@ void editorRowAppendString(erow *row, char *str, size_t length) {
 
 void editorInsertChar(int c) {
     if (editor.cursorY == editor.numRows) {
-        editorAppendRow("", 0);
+        editorInsertRow(editor.numRows, "", 0);
     }
     editorRowInsertChar(&editor.row[editor.cursorY], editor.cursorX, c);
     editor.cursorX++;
@@ -358,6 +362,22 @@ void editorDeleteChar() {
         editorDeleteRow(editor.cursorY);
         editor.cursorY--;
     }
+}
+
+void editorInsertNewLine() {
+    if (editor.cursorX == 0) {
+        editorInsertRow(editor.cursorY, "", 0);
+    }
+    else {
+        erow* row = &editor.row[editor.cursorY];
+        editorInsertRow(editor.cursorY + 1, &row->data[editor.cursorX], row->size - editor.cursorX);
+        row = &editor.row[editor.cursorY];
+        row->size = editor.cursorX;
+        row->data[row->size] = '\0';
+        editorUpdateRow(row);
+    }
+    editor.cursorY++;
+    editor.cursorX = 0;
 }
 
 void editorDrawRows(struct abuf *ab) {
