@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include "include/editor.h"
 
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -274,6 +275,43 @@ void editorRefreshScreen() {
     abFree(&ab);
 }
 
+char* editorPrompt(const char *prompt) {
+    size_t bufsize = 128;
+    char *buf = malloc(bufsize);
+
+    size_t buflen = 0;
+    buf[0] = '\0';
+
+    while (true) {
+        editorSetStatusMessage(prompt, buf);
+        editorRefreshScreen();
+
+        const int c = editorReadKey();
+        if (c == DELETE || c == BACKSPACE || c == CTRL('h')) {
+            if (buflen != 0) buf[--buflen] = '\0';
+        }
+        if (c == '\x1b') {
+            editorSetStatusMessage("");
+            free(buf);
+            return nullptr;
+        }
+        if (c == '\r') {
+            if (buflen != 0) {
+                editorSetStatusMessage("");
+                return buf;
+            }
+        }
+        if (!iscntrl(c) && c < 128) {
+            if (buflen == bufsize - 1) {
+                bufsize *= 2;
+                buf = realloc(buf, bufsize);
+            }
+            buf[buflen++] = c;
+            buf[buflen] = '\0';
+        }
+    }
+}
+
 void editorSetStatusMessage(const char *format, ...) {
     va_list args;
     va_start(args, format);
@@ -461,7 +499,13 @@ void editorScroll() {
 }
 
 void editorSave() {
-    if (editor.filename == nullptr) return;
+    if (editor.filename == nullptr) {
+        editor.filename = editorPrompt("Save as: %s, press ESC to cancel");
+        if (editor.filename == nullptr) {
+            editorSetStatusMessage("Save cancelled");
+            return;
+        }
+    }
 
     int length;
     char* buffer = editorRowsToString(&length);

@@ -18,6 +18,7 @@ void editorMoveCursor(int key);
 void editorOpen(char *filename);
 void editorProcessKeypress();
 void editorRefreshScreen();
+char* editorPrompt(const char *prompt);
 void editorSetStatusMessage(const char *format, ...);
 int editorRowCursorXToRenderX(const erow* row, int cursorX);
 char* editorRowsToString(int* bufferLength);
