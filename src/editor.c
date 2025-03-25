@@ -31,6 +31,12 @@ enum editorKey {
     PAGE_DOWN,
 };
 
+enum editorHighlight {
+    HL_NORMAL = 0,
+    HL_NUMBER,
+    HL_MATCH
+};
+
 int editorReadKey() {
     ssize_t nread;
     char c = '\0';
@@ -131,6 +137,7 @@ void editorInsertRow(int at, const char *s, const int len) {
 
     editor.row[at].rsize = 0;
     editor.row[at].render = nullptr;
+    editor.row[at].hl = nullptr;
     editorUpdateRow(&editor.row[at]);
 
     editor.numRows++;
@@ -156,6 +163,8 @@ void editorUpdateRow(erow *row) {
     }
     row->render[idx] = '\0';
     row->rsize = idx;
+
+    editorUpdateSyntax(row);
 }
 
 void editorDeleteRow(int at) {
@@ -169,6 +178,7 @@ void editorDeleteRow(int at) {
 void editorFreeRow(erow *row) {
     free(row->render);
     free(row->data);
+    free(row->hl);
 }
 
 void editorOpen(char *filename) {
@@ -318,6 +328,34 @@ char* editorPrompt(const char *prompt, void(*callback)(const char*, int)) {
     }
 }
 
+void editorUpdateSyntax(erow *row) {
+    row->hl = realloc(row->hl, row->size + 1);
+    memset(row->hl, HL_NORMAL, row->rsize);
+
+    for (int i = 0; i < row->rsize; i++) {
+        if (isdigit(row->render[i])) {
+            row->hl[i] = HL_NUMBER;
+        }
+    }
+}
+
+int editorSyntaxToColor(const int hl) {
+    enum TERMINAL_COLOR {
+        TERM_RED = 31,
+        TERM_GREEN = 32,
+        TERM_YELLOW = 33,
+        TERM_BLUE = 34,
+        TERM_MAGENTA = 35,
+        TERM_CYAN = 36,
+        TERM_WHITE = 37
+    };
+    switch (hl) {
+        case HL_NUMBER: return TERM_RED;
+        case HL_MATCH: return TERM_YELLOW;
+        default: return TERM_WHITE;
+    }
+}
+
 void editorFind() {
     const int savedCx = editor.cursorX;
     const int savedCy = editor.cursorY;
@@ -337,6 +375,15 @@ void editorFindCallback(const char *query, const int key) {
 
     static int lastMatch = -1;
     static int direction = 1;
+
+    static int saved_hl_line;
+    static char* saved_hl = nullptr;
+
+    if (saved_hl) {
+        memcpy(editor.row[saved_hl_line].hl, saved_hl, editor.row[saved_hl_line].rsize);
+        free(saved_hl);
+        saved_hl = nullptr;
+    }
 
     if (key == '\r' || key == '\x1b') {
         lastMatch = -1;
@@ -369,6 +416,11 @@ void editorFindCallback(const char *query, const int key) {
             editor.cursorY = current;
             editor.cursorX = editorRowCursorXToRenderX(row, match - row->render);
             editor.rowOffset = editor.numRows;
+
+            saved_hl_line = current;
+            saved_hl = malloc(row->rsize);
+            memcpy(saved_hl, row->hl, row->rsize);
+            memset(&row->hl[match - row->render], HL_MATCH, strlen(query));
             break;
         }
     }
@@ -519,7 +571,29 @@ void editorDrawRows(struct abuf *ab) {
             int len = editor.row[fileRow].rsize - editor.colOffset;
             if (len < 0) len = 0;
             if (len > editor.screenCols) { len = editor.screenCols; }
-            abAppend(ab, &editor.row[fileRow].render[editor.colOffset], len);
+            char *c = &editor.row[fileRow].render[editor.colOffset];
+            const unsigned char* hl = &editor.row[fileRow].hl[editor.colOffset];
+            int currentColor = -1;
+            for (int j = 0; j < len; j++) {
+                if (hl[j] == HL_NORMAL) {
+                    if (currentColor != -1) {
+                        abAppend(ab, "\x1b[39m", 5);
+                        currentColor = -1;
+                    }
+                    abAppend(ab, &c[j], 1);
+                }
+                else {
+                    const int color = editorSyntaxToColor(hl[j]);
+                    if (color != currentColor) {
+                        currentColor = color;
+                        char buf[16];
+                        const int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", color);
+                        abAppend(ab, buf, clen);
+                    }
+                    abAppend(ab, &c[j], 1);
+                }
+            }
+            abAppend(ab, "\x1b[39m", 5);
         }
         abAppend(ab, "\x1b[K", 3);
         abAppend(ab, "\r\n", 2);

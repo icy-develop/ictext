@@ -8,6 +8,7 @@ typedef struct erow {
     int rsize;
     char* data;
     char* render;
+    unsigned char* hl;
 } erow;
 
 struct editorConfig {

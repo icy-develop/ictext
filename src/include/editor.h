@@ -19,25 +19,34 @@ void editorOpen(char *filename);
 void editorProcessKeypress();
 void editorRefreshScreen();
 char* editorPrompt(const char *prompt, void(*callback)(const char*, int));
+
+void editorUpdateSyntax(erow* row);
+int editorSyntaxToColor(int hl);
+
 void editorFind();
 void editorFindCallback(const char* query, int key);
+
 void editorSetStatusMessage(const char *format, ...);
 int editorRowCursorXToRenderX(const erow* row, int cursorX);
 int editorRenderXToCursorX(const erow* row, int renderX);
+
 char* editorRowsToString(int* bufferLength);
 void editorRowInsertChar(erow* row, int at, int c);
 void editorRowDeleteChar(erow* row, int at);
 void editorRowAppendString(erow* row, char* str, size_t length);
 void editorInsertChar(int c);
 void editorDeleteChar();
+
 void editorInsertNewLine();
 void editorInsertRow(int at, const char* s, int len);
 void editorUpdateRow(erow* row);
 void editorDeleteRow(int at);
 void editorFreeRow(erow* row);
 void editorDrawRows(struct abuf *ab);
+
 void editorDrawStatusBar(struct abuf *ab);
 void editorDrawStatusMessage(struct abuf *ab);
+
 void editorSave();
 void editorScroll();
 void editorInit();
