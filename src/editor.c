@@ -134,7 +134,7 @@ void editorInsertRow(int at, const char *s, const int len) {
 
     editor.row = realloc(editor.row, sizeof(erow) * (editor.numRows + 1));
     memmove(&editor.row[at+1], &editor.row[at], (editor.numRows - at) * sizeof(erow));
-    for (int j = at + 1; j < editor.numRows; j++) editor.row[j].idx++;
+    for (int j = at + 1; j <= editor.numRows; j++) editor.row[j].idx++;
 
     editor.row[at].idx = at;
 
