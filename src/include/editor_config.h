@@ -5,15 +5,21 @@
 
 #include "defines.h"
 
-typedef struct editorSyntax {
+struct editorSyntax {
     char* filetype;
     char** filematch;
+    char** kw;
+    char** tn;
+    char* singlelineCommentStart;
     int flags;
-} syntax;
+};
 
-static char* C_HL_EXTENSTIONS[] = { ".c", ".h", ".cpp", ".hpp", nullptr};
+static char* C_HL_EXTENSIONS[] = { ".c", ".h", ".cpp", ".hpp", nullptr};
+static char* C_HL_KEYWORDS[] = {"switch", "if", "while", "for", "break", "continue", "return", "switch", "case", "else", "struct", "union", "typedef", "static", "enum", "class"};
+static char* C_HL_TYPENAMES[] = {"int", "long", "double", "float", "unsigned", "char", "void", "nullptr", "NULL", "true", "false"};
 
-static syntax HLDB[] = {{"c", C_HL_EXTENSTIONS, HL_HIGHLIGHT_NUMBERS}};
+static struct editorSyntax HLDB[] = {{"c", C_HL_EXTENSIONS, C_HL_KEYWORDS, C_HL_TYPENAMES,"//",
+    HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS}};
 
 #define HLDB_ENTRIES sizeof(HLDB) / sizeof(HLDB[0])
 

@@ -33,6 +33,10 @@ enum editorKey {
 
 enum editorHighlight {
     HL_NORMAL = 0,
+    HL_COMMENT,
+    HL_KEYWORD,
+    HL_TYPENAME,
+    HL_STRING,
     HL_NUMBER,
     HL_MATCH
 };
@@ -365,12 +369,48 @@ void editorUpdateSyntax(erow *row) {
 
     if (editor.syntax == nullptr) return;
 
+    char** keywords = editor.syntax->kw;
+    char** typenames = editor.syntax->tn;
+
+    char* scs = editor.syntax->singlelineCommentStart;
+    int scsLength = scs ? strlen(scs) : 0;
+
     int prev_sep = true;
+    int in_string = false;
 
     int i = 0;
     while (i < row->rsize) {
         const char c = row->render[i];
-        unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+        const unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+
+        if (scsLength && !in_string) {
+            if (!strncmp(&row->render[i], scs, scsLength)) {
+                memset(&row->hl[i], HL_COMMENT, row->rsize-i);
+                break;
+            }
+        }
+
+        if (editor.syntax->flags & HL_HIGHLIGHT_STRINGS) {
+            if (in_string) {
+                row->hl[i] = HL_STRING;
+                if (c == '\\' && i+1 < row->rsize) {
+                    row->hl[i + 1] = HL_STRING;
+                    i += 2;
+                    continue;
+                }
+                if (c == in_string) in_string = false;
+                i++;
+                prev_sep = true;
+                continue;
+            }
+            if (c == '"' || c == '\'') {
+                in_string = c;
+                row->hl[i] = HL_STRING;
+                i++;
+                continue;
+            }
+        }
+
         if (editor.syntax->flags & HL_HIGHLIGHT_NUMBERS) {
             if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) || (c == '.' && prev_hl == HL_NUMBER)) {
                 row->hl[i] = HL_NUMBER;
@@ -379,6 +419,35 @@ void editorUpdateSyntax(erow *row) {
                 continue;
             }
         }
+
+         if (prev_sep) {
+             int j;
+             for (j = 0; typenames[j]; j++) {
+                 const int klen = strlen(typenames[j]);
+                 if (!strncmp(&row->render[i], typenames[j], klen) && isSeparator(row->render[i + klen])) {
+                     memset(&row->hl[i], HL_TYPENAME, klen);
+                     i += klen;
+                     break;
+                 }
+             }
+             if (typenames[j] != nullptr) {
+                 prev_sep = 0;
+                 continue;
+             }
+             for (j = 0; keywords[j]; j++) {
+                 const int tlen = strlen(keywords[j]);
+                 if (!strncmp(&row->render[i], keywords[j], tlen) && isSeparator(row->render[i + tlen])) {
+                     memset(&row->hl[i], HL_KEYWORD, tlen);
+                     i += tlen;
+                     break;
+                 }
+             }
+             if (typenames[j] != nullptr) {
+                 prev_sep = 0;
+                 continue;
+             }
+        }
+
         prev_sep = isSeparator(c);
         i++;
     }
@@ -395,6 +464,10 @@ int editorSyntaxToColor(const int hl) {
         TERM_WHITE = 37
     };
     switch (hl) {
+        case HL_STRING: return TERM_MAGENTA;
+        case HL_COMMENT: return TERM_CYAN;
+        case HL_KEYWORD: return TERM_BLUE;
+        case HL_TYPENAME: return TERM_GREEN;
         case HL_NUMBER: return TERM_RED;
         case HL_MATCH: return TERM_YELLOW;
         default: return TERM_WHITE;
@@ -620,7 +693,18 @@ void editorDrawRows(struct abuf *ab) {
             const unsigned char* hl = &editor.row[fileRow].hl[editor.colOffset];
             int currentColor = -1;
             for (int j = 0; j < len; j++) {
-                if (hl[j] == HL_NORMAL) {
+                if (iscntrl(c[j])) {
+                    char sym = (c[j] <= 26) ? '@' + c[j] : '?';
+                    abAppend(ab, "\x1b[7m",4);
+                    abAppend(ab, &sym, 1);
+                    abAppend(ab, "\x1b[m",3);
+                    if (currentColor != -1) {
+                        char buf[16];
+                        const int clen = snprintf(buf, sizeof(buf), "\x1b[%dm",currentColor);
+                        abAppend(ab, buf, clen);
+                    }
+                }
+                else if (hl[j] == HL_NORMAL) {
                     if (currentColor != -1) {
                         abAppend(ab, "\x1b[39m", 5);
                         currentColor = -1;
