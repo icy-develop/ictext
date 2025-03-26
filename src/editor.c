@@ -184,6 +184,9 @@ void editorFreeRow(erow *row) {
 void editorOpen(char *filename) {
     free(editor.filename);
     editor.filename = strdup(filename);
+
+    editorSelectSyntaxHighlight();
+
     FILE *file = fopen(filename, "r");
     if (!file) crash("fopen failed");
     char *line = nullptr;
@@ -205,7 +208,7 @@ void editorProcessKeypress() {
 
     const int c = editorReadKey();
     switch (c) {
-        case CTRL('q'):
+        case CTRL_KEY('q'):
             if (editor.dirty && quit_times > 0) {
                 editorSetStatusMessage("File has unsaved changes. Press Ctrl-Q %d more times to exit", quit_times);
                 quit_times--;
@@ -214,22 +217,22 @@ void editorProcessKeypress() {
             write(STDOUT_FILENO, "\x1b[2J", 4);
             write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
-        case CTRL('s'):
+        case CTRL_KEY('s'):
             editorSave();
             break;
         case BACKSPACE:
-        case CTRL('h'):
+        case CTRL_KEY('h'):
         case DELETE:
             if (c == DELETE) editorMoveCursor(ARROW_RIGHT);
             editorDeleteChar();
             break;
-        case CTRL('l'):
+        case CTRL_KEY('l'):
         case '\x1b':
             break;
         case '\r':
             editorInsertNewLine();
             break;
-        case CTRL('f'):
+        case CTRL_KEY('f'):
             editorFind();
             break;
         case HOME:
@@ -300,7 +303,7 @@ char* editorPrompt(const char *prompt, void(*callback)(const char*, int)) {
         editorRefreshScreen();
 
         const int c = editorReadKey();
-        if (c == DELETE || c == BACKSPACE || c == CTRL('h')) {
+        if (c == DELETE || c == BACKSPACE || c == CTRL_KEY('h')) {
             if (buflen != 0) buf[--buflen] = '\0';
         }
         if (c == '\x1b') {
@@ -328,14 +331,56 @@ char* editorPrompt(const char *prompt, void(*callback)(const char*, int)) {
     }
 }
 
+int isSeparator(const int c) {
+    return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];", c) != nullptr;
+}
+
+void editorSelectSyntaxHighlight() {
+    editor.syntax = nullptr;
+    if (editor.filename == nullptr) return;
+
+    char* ext = strchr(editor.filename, '.');
+
+    for (unsigned int i = 0; i < HLDB_ENTRIES; ++i) {
+        struct editorSyntax* syntax = &HLDB[i];
+        unsigned int j = 0;
+        while (syntax->filematch[i]) {
+            int is_ext = (syntax->filematch[i][0] == '.');
+            if ((is_ext && ext && !strcmp(ext, syntax->filematch[i])) || (!is_ext && strstr(editor.filename, syntax->filematch[i]))) {
+                editor.syntax = syntax;
+
+                for (int filerow = 0; filerow < editor.numRows; filerow++) {
+                    editorUpdateSyntax(&editor.row[filerow]);
+                }
+                return;
+            }
+            i++;
+        }
+    }
+}
+
 void editorUpdateSyntax(erow *row) {
     row->hl = realloc(row->hl, row->size + 1);
     memset(row->hl, HL_NORMAL, row->rsize);
 
-    for (int i = 0; i < row->rsize; i++) {
-        if (isdigit(row->render[i])) {
-            row->hl[i] = HL_NUMBER;
+    if (editor.syntax == nullptr) return;
+
+    int prev_sep = true;
+
+    int i = 0;
+    while (i < row->rsize) {
+        const char c = row->render[i];
+        unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+        if (editor.syntax->flags & HL_HIGHLIGHT_NUMBERS) {
+            if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) || (c == '.' && prev_hl == HL_NUMBER)) {
+                row->hl[i] = HL_NUMBER;
+                i++;
+                prev_sep = false;
+                continue;
+            }
         }
+        prev_sep = isSeparator(c);
+        i++;
     }
 }
 
@@ -605,7 +650,7 @@ void editorDrawStatusBar(struct abuf *ab) {
     char status[80], rstatus[80];
     int length = snprintf(status, sizeof(status), "%.20s - %d lines %s", editor.filename ? editor.filename : "[Blank]",
                           editor.numRows, editor.dirty ? "(modified)" : "");
-    int rLength = snprintf(rstatus, sizeof(rstatus), "%d/%d", editor.cursorY + 1, editor.numRows);
+    int rLength = snprintf(rstatus, sizeof(rstatus), "%s | %d/%d", editor.syntax ? editor.syntax->filetype : "unknown", editor.cursorY + 1, editor.numRows);
     if (length > editor.screenCols) length = editor.screenCols;
     abAppend(ab, status, length);
     while (length < editor.screenCols) {
@@ -655,6 +700,7 @@ void editorSave() {
             editorSetStatusMessage("Save cancelled");
             return;
         }
+        editorSelectSyntaxHighlight();
     }
 
     int length;
@@ -689,6 +735,7 @@ void editorInit() {
     editor.filename = nullptr;
     editor.statusmsg[0] = '\0';
     editor.statusmsgTime = 0;
+    editor.syntax = nullptr;
     if (getWindowSize(&editor.screenRows, &editor.screenCols) == -1) crash("getWindowSize");
     editor.screenRows -= 2;
 }

@@ -3,6 +3,20 @@
 #include <termios.h>
 #include <time.h>
 
+#include "defines.h"
+
+typedef struct editorSyntax {
+    char* filetype;
+    char** filematch;
+    int flags;
+} syntax;
+
+static char* C_HL_EXTENSTIONS[] = { ".c", ".h", ".cpp", ".hpp", nullptr};
+
+static syntax HLDB[] = {{"c", C_HL_EXTENSTIONS, HL_HIGHLIGHT_NUMBERS}};
+
+#define HLDB_ENTRIES sizeof(HLDB) / sizeof(HLDB[0])
+
 typedef struct erow {
     int size;
     int rsize;
@@ -22,10 +36,13 @@ struct editorConfig {
     char* filename;
     char statusmsg[80];
     time_t statusmsgTime;
+    struct editorSyntax* syntax;
     struct termios original_mode;
 };
 
 static struct editorConfig editor;
+
+
 
 void disableRawMode();
 void enableRawMode();

@@ -20,6 +20,8 @@ void editorProcessKeypress();
 void editorRefreshScreen();
 char* editorPrompt(const char *prompt, void(*callback)(const char*, int));
 
+int isSeparator(int c);
+void editorSelectSyntaxHighlight();
 void editorUpdateSyntax(erow* row);
 int editorSyntaxToColor(int hl);
 
