@@ -11,6 +11,8 @@ struct editorSyntax {
     char** kw;
     char** tn;
     char* singlelineCommentStart;
+    char* multiLineCommentStart;
+    char* multiLineCommentEnd;
     int flags;
 };
 
@@ -18,17 +20,19 @@ static char* C_HL_EXTENSIONS[] = { ".c", ".h", ".cpp", ".hpp", nullptr};
 static char* C_HL_KEYWORDS[] = {"switch", "if", "while", "for", "break", "continue", "return", "switch", "case", "else", "struct", "union", "typedef", "static", "enum", "class"};
 static char* C_HL_TYPENAMES[] = {"int", "long", "double", "float", "unsigned", "char", "void", "nullptr", "NULL", "true", "false"};
 
-static struct editorSyntax HLDB[] = {{"c", C_HL_EXTENSIONS, C_HL_KEYWORDS, C_HL_TYPENAMES,"//",
+static struct editorSyntax HLDB[] = {{"c", C_HL_EXTENSIONS, C_HL_KEYWORDS, C_HL_TYPENAMES,"//", "/*", "*/"
     HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS}};
 
 #define HLDB_ENTRIES sizeof(HLDB) / sizeof(HLDB[0])
 
 typedef struct erow {
+    int idx;
     int size;
     int rsize;
     char* data;
     char* render;
     unsigned char* hl;
+    int hlOpenComment;
 } erow;
 
 struct editorConfig {

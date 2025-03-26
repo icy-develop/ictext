@@ -34,6 +34,7 @@ enum editorKey {
 enum editorHighlight {
     HL_NORMAL = 0,
     HL_COMMENT,
+    HL_MLCOMMENT,
     HL_KEYWORD,
     HL_TYPENAME,
     HL_STRING,
@@ -133,6 +134,9 @@ void editorInsertRow(int at, const char *s, const int len) {
 
     editor.row = realloc(editor.row, sizeof(erow) * (editor.numRows + 1));
     memmove(&editor.row[at+1], &editor.row[at], (editor.numRows - at) * sizeof(erow));
+    for (int j = at + 1; j < editor.numRows; j++) editor.row[j].idx++;
+
+    editor.row[at].idx = at;
 
     editor.row[at].size = len;
     editor.row[at].data = malloc(len + 1);
@@ -142,6 +146,7 @@ void editorInsertRow(int at, const char *s, const int len) {
     editor.row[at].rsize = 0;
     editor.row[at].render = nullptr;
     editor.row[at].hl = nullptr;
+    editor.row[at].hlOpenComment = false;
     editorUpdateRow(&editor.row[at]);
 
     editor.numRows++;
@@ -175,6 +180,7 @@ void editorDeleteRow(int at) {
     if (at < 0 || at >= editor.numRows) return;
     editorFreeRow(&editor.row[at]);
     memmove(&editor.row[at], &editor.row[at + 1], (editor.numRows - at - 1) * sizeof(erow));
+    for (int j = at; j < editor.numRows - 1; j++) editor.row[j].idx--;
     editor.numRows--;
     editor.dirty++;
 }
@@ -373,20 +379,47 @@ void editorUpdateSyntax(erow *row) {
     char** typenames = editor.syntax->tn;
 
     char* scs = editor.syntax->singlelineCommentStart;
+    char* mcs = editor.syntax->multiLineCommentStart;
+    char* mce = editor.syntax->multiLineCommentEnd;
+
     int scsLength = scs ? strlen(scs) : 0;
+    int mcsLength = mcs ? strlen(mcs) : 0;
+    int mceLength = mce ? strlen(mce) : 0;
 
     int prev_sep = true;
     int in_string = false;
+    int in_comment = (row->idx > 0 && editor.row[row->idx - 1].hlOpenComment);
 
     int i = 0;
     while (i < row->rsize) {
         const char c = row->render[i];
         const unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
-        if (scsLength && !in_string) {
+        if (scsLength && !in_string && !in_comment) {
             if (!strncmp(&row->render[i], scs, scsLength)) {
                 memset(&row->hl[i], HL_COMMENT, row->rsize-i);
                 break;
+            }
+        }
+
+        if (mcsLength && mceLength && !in_string) {
+            if (in_comment) {
+                row->hl[i] = HL_MLCOMMENT;
+                if (!strncmp(&row->render[i], mce, mceLength)) {
+                    memset(&row->hl[i], HL_MLCOMMENT, mceLength);
+                    i += mceLength;
+                    in_comment = false;
+                    prev_sep = true;
+                    continue;
+                }
+                i++;
+                continue;
+            }
+            if (!strncmp(&row->render[i], mcs, mcsLength)) {
+                memset(&row->hl[i], HL_MLCOMMENT, mcsLength);
+                i += mcsLength;
+                in_comment = true;
+                continue;
             }
         }
 
@@ -451,6 +484,11 @@ void editorUpdateSyntax(erow *row) {
         prev_sep = isSeparator(c);
         i++;
     }
+    int changed = (row->hlOpenComment != in_comment);
+    row->hlOpenComment = in_comment;
+    if (changed && row->idx + 1 < editor.numRows) {
+        editorUpdateSyntax(&editor.row[row->idx + 1]);
+    }
 }
 
 int editorSyntaxToColor(const int hl) {
@@ -465,6 +503,7 @@ int editorSyntaxToColor(const int hl) {
     };
     switch (hl) {
         case HL_STRING: return TERM_MAGENTA;
+        case HL_MLCOMMENT:
         case HL_COMMENT: return TERM_CYAN;
         case HL_KEYWORD: return TERM_BLUE;
         case HL_TYPENAME: return TERM_GREEN;
